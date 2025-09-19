@@ -84,9 +84,6 @@ func (a *App) Up(ctx context.Context, p UpParams) (*domain.VM, error) {
 	if vm.CreatedAt == 0 && a.Clock != nil {
 		vm.CreatedAt = a.Clock.Now().UnixNano()
 	}
-	if err := a.Store.Save(ctx, vm); err != nil {
-		return nil, err
-	}
 	if err := a.Artifacts.Prepare(ctx, &vm); err != nil {
 		return nil, err
 	}
