@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"time"
 
+	vfprov "github.com/alechenninger/orchard/internal/provider/vfkit"
 	runfs "github.com/alechenninger/orchard/internal/runstate/fs"
 	"github.com/alechenninger/orchard/internal/shim/proc"
 	fsstore "github.com/alechenninger/orchard/internal/vmstore/fs"
@@ -33,7 +34,8 @@ var shimCmd = &cobra.Command{
 		defer cancel()
 		store := fsstore.NewDefault()
 		run := runfs.NewDefault()
-		if err := proc.RunChild(cctx, store, run, flagShimVM); err != nil {
+		provider := vfprov.New()
+		if err := proc.RunChild(cctx, store, run, provider, flagShimVM); err != nil {
 			return err
 		}
 		// Should not reach here until signaled; just in case

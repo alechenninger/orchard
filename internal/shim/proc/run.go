@@ -11,7 +11,7 @@ import (
 )
 
 // RunChild is invoked in the _shim process to own the VM lifecycle.
-func RunChild(ctx context.Context, store domain.VMStore, run domain.RuntimeState, name string) error {
+func RunChild(ctx context.Context, store domain.VMStore, run domain.RuntimeState, provider domain.VirtualizationProvider, name string) error {
 	vm, err := store.Load(ctx, name)
 	if err != nil {
 		return err
@@ -32,6 +32,11 @@ func RunChild(ctx context.Context, store domain.VMStore, run domain.RuntimeState
 		return err
 	}
 
+	// Start the VM via provider
+	if _, err := provider.StartVM(ctx, *vm); err != nil {
+		return err
+	}
+
 	// Handle signals for graceful shutdown
 	sigs := make(chan os.Signal, 2)
 	signal.Notify(sigs, syscall.SIGTERM, syscall.SIGINT)
@@ -46,6 +51,9 @@ func RunChild(ctx context.Context, store domain.VMStore, run domain.RuntimeState
 	case <-sigs:
 		// got signal
 	}
+
+	// Stop VM
+	_ = provider.StopVM(ctx, *vm)
 
 	// Cleanup readiness and pid on exit
 	_ = run.Clear(ctx, vm.Name)
