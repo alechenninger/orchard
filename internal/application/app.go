@@ -7,19 +7,21 @@ import (
 	"path/filepath"
 
 	"github.com/alechenninger/orchard/internal/domain"
+	shimproc "github.com/alechenninger/orchard/internal/shim/proc"
 	fsstore "github.com/alechenninger/orchard/internal/vmstore/fs"
 )
 
 type App struct {
 	Store domain.VMStore
+	Shim  domain.ShimProcessManager
 }
 
 func New(store domain.VMStore) *App {
-	return &App{Store: store}
+	return &App{Store: store, Shim: shimproc.New()}
 }
 
 func NewDefault() *App {
-	return &App{Store: fsstore.New(defaultBaseDir())}
+	return &App{Store: fsstore.New(defaultBaseDir()), Shim: shimproc.New()}
 }
 
 type UpParams struct {

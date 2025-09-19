@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"path/filepath"
 	"text/tabwriter"
 
 	"github.com/alechenninger/orchard/internal/application"
@@ -38,14 +37,6 @@ var listCmd = &cobra.Command{
 		}
 		return tw.Flush()
 	},
-}
-
-func baseDir() string {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return filepath.Join(os.TempDir(), "orchard")
-	}
-	return filepath.Join(home, ".orchard")
 }
 
 func ifEmpty(s, alt string) string {
