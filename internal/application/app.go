@@ -82,6 +82,39 @@ func (a *App) ListVMs(ctx context.Context) ([]domain.VM, error) {
 	return a.Store.List(ctx)
 }
 
+func (a *App) Start(ctx context.Context, nameOrID string) (*domain.VM, error) {
+	vm, err := a.Store.Load(ctx, nameOrID)
+	if err != nil {
+		return nil, err
+	}
+	pid, err := a.Shim.StartDetached(ctx, *vm)
+	if err != nil {
+		return nil, err
+	}
+	vm.PID = pid
+	vm.Status = "running"
+	if err := a.Store.Save(ctx, *vm); err != nil {
+		return nil, err
+	}
+	return vm, nil
+}
+
+func (a *App) Stop(ctx context.Context, nameOrID string) error {
+	vm, err := a.Store.Load(ctx, nameOrID)
+	if err != nil {
+		return err
+	}
+	if vm.PID == 0 {
+		return nil
+	}
+	if err := a.Shim.Stop(ctx, vm.PID); err != nil {
+		return err
+	}
+	vm.PID = 0
+	vm.Status = "stopped"
+	return a.Store.Save(ctx, *vm)
+}
+
 func defaultBaseDir() string {
 	home, err := os.UserHomeDir()
 	if err != nil {

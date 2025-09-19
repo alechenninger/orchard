@@ -5,6 +5,7 @@ import (
 	"runtime"
 	"testing"
 
+	"github.com/alechenninger/orchard/internal/domain"
 	"github.com/alechenninger/orchard/internal/vmstore/mem"
 )
 
@@ -52,5 +53,50 @@ func TestUpCreatesVMAndLists(t *testing.T) {
 	}
 	if vms[0].Name != vm1.Name || vms[1].Name != vm2.Name {
 		t.Fatalf("unexpected order: %v then %v", vms[0].Name, vms[1].Name)
+	}
+}
+
+type fakeShim struct{ nextPID int }
+
+func (f *fakeShim) StartDetached(ctx context.Context, vm domain.VM) (int, error) {
+	f.nextPID++
+	return f.nextPID, nil
+}
+func (f *fakeShim) Stop(ctx context.Context, pid int) error { return nil }
+
+func TestStartStopUpdatesStore(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, file, _, _ := runtime.Caller(0)
+
+	store := mem.New()
+	app := New(store)
+	app.Shim = &fakeShim{}
+
+	vm, err := app.Up(ctx, UpParams{ImagePath: file})
+	if err != nil {
+		t.Fatalf("up failed: %v", err)
+	}
+	if vm.Status != "stopped" {
+		t.Fatalf("expected stopped, got %s", vm.Status)
+	}
+
+	vm, err = app.Start(ctx, vm.Name)
+	if err != nil {
+		t.Fatalf("start failed: %v", err)
+	}
+	if vm.Status != "running" || vm.PID == 0 {
+		t.Fatalf("expected running with pid, got %v pid=%d", vm.Status, vm.PID)
+	}
+
+	if err := app.Stop(ctx, vm.Name); err != nil {
+		t.Fatalf("stop failed: %v", err)
+	}
+	vm2, err := app.Store.Load(ctx, vm.Name)
+	if err != nil {
+		t.Fatalf("load after stop failed: %v", err)
+	}
+	if vm2.Status != "stopped" || vm2.PID != 0 {
+		t.Fatalf("expected stopped with pid=0, got %v pid=%d", vm2.Status, vm2.PID)
 	}
 }
