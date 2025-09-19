@@ -1,4 +1,4 @@
-package cmd
+package cli
 
 import (
 	"fmt"
@@ -8,7 +8,7 @@ import (
 	"text/tabwriter"
 
 	"github.com/alechenninger/orchard/internal/domain"
-    fsstore "github.com/alechenninger/orchard/internal/vmstore/fs"
+	fsstore "github.com/alechenninger/orchard/internal/vmstore/fs"
 	"github.com/spf13/cobra"
 )
 
@@ -27,7 +27,6 @@ var listCmd = &cobra.Command{
 			return err
 		}
 		if flagJSON {
-			// basic JSON for now
 			for _, vm := range vms {
 				slog.Info("vm", "name", vm.Name, "status", vm.Status, "cpus", vm.CPUs, "memoryMiB", vm.MemoryMiB)
 			}
@@ -57,5 +56,4 @@ func ifEmpty(s, alt string) string {
 	return s
 }
 
-// Ensure interface satisfied compile-time
 var _ domain.VMStore = (*fsstore.Store)(nil)

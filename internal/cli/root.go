@@ -1,4 +1,4 @@
-package cmd
+package cli
 
 import (
 	"context"
@@ -17,14 +17,12 @@ var (
 			return setupLogging(cmd.Context())
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// Default command prints help
 			return cmd.Help()
 		},
 		SilenceErrors: true,
 		SilenceUsage:  true,
 	}
 
-	// flags
 	flagJSON    bool
 	flagVerbose bool
 )
@@ -34,7 +32,6 @@ func init() {
 	rootCmd.PersistentFlags().BoolVarP(&flagVerbose, "verbose", "v", false, "enable verbose (debug) logging")
 }
 
-// Execute runs the root command.
 func Execute(version string) {
 	rootCmd.Version = version
 	if err := rootCmd.Execute(); err != nil {
