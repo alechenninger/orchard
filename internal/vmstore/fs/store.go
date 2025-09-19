@@ -64,7 +64,6 @@ func (s *Store) Save(ctx context.Context, vm domain.VM) error {
 	if err := os.MkdirAll(d, 0o755); err != nil {
 		return err
 	}
-	vm.CreatedAt = vm.CreatedAt
 	if vm.CreatedAt == 0 {
 		vm.CreatedAt = time.Now().Unix()
 	}
