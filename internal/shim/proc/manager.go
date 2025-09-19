@@ -2,6 +2,7 @@ package proc
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"syscall"
@@ -45,7 +46,14 @@ func (m *Manager) Stop(ctx context.Context, pid int) error {
 		return err
 	}
 	// Best-effort SIGTERM
-	return p.Signal(syscall.SIGTERM)
+	if err := p.Signal(syscall.SIGTERM); err != nil {
+		// Tolerate already-finished or missing process
+		if errors.Is(err, os.ErrProcessDone) || errors.Is(err, syscall.ESRCH) {
+			return nil
+		}
+		return err
+	}
+	return nil
 }
 
 var _ domain.ShimProcessManager = (*Manager)(nil)
@@ -55,5 +63,13 @@ func (m *Manager) WaitReadyAndPID(ctx context.Context, vmName string) (int, erro
 }
 
 func (m *Manager) GetPID(ctx context.Context, vmName string) (int, error) {
-	return m.run.ReadPID(ctx, vmName)
+	pid, err := m.run.ReadPID(ctx, vmName)
+	if err != nil {
+		return 0, err
+	}
+	// Verify process is alive
+	if err := syscall.Kill(pid, 0); err != nil {
+		return 0, os.ErrProcessDone
+	}
+	return pid, nil
 }

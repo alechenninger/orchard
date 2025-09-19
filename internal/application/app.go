@@ -144,12 +144,10 @@ func (a *App) Delete(ctx context.Context, nameOrID string, force bool) error {
 		return err
 	}
 	// Determine if running
-	running := vm.PID != 0
-	if !running {
-		if p, err := a.Shim.GetPID(ctx, vm.Name); err == nil && p > 0 {
-			running = true
-			vm.PID = p
-		}
+	running := false
+	if p, err := a.Shim.GetPID(ctx, vm.Name); err == nil && p > 0 {
+		running = true
+		vm.PID = p
 	}
 	if running {
 		if !force {
