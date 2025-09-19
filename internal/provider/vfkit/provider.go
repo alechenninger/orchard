@@ -2,40 +2,78 @@ package vfkit
 
 import (
 	"context"
+	"path/filepath"
 	"sync"
 
 	"github.com/alechenninger/orchard/internal/domain"
+	"github.com/crc-org/vfkit/pkg/config"
+	"github.com/crc-org/vfkit/pkg/vf"
 )
 
 type Provider struct {
-	mu sync.Mutex
-	// later: hold vfkit VM handles by name
-	running map[string]struct{}
+	mu      sync.Mutex
+	handles map[string]*vf.VirtualMachine
 }
 
-func New() *Provider { return &Provider{running: make(map[string]struct{})} }
+func New() *Provider { return &Provider{handles: make(map[string]*vf.VirtualMachine)} }
 
 func (p *Provider) StartVM(ctx context.Context, vm domain.VM) (int, error) {
+	// Build vfkit config
+	boot := config.NewEFIBootloader(vm.EFIVarsPath, false)
+	vmc := config.NewVirtualMachine(uint(vm.CPUs), uint64(vm.MemoryMiB), boot)
+
+	// Disk
+	if vm.DiskPath != "" {
+		blk, err := config.VirtioBlkNew(vm.DiskPath)
+		if err != nil {
+			return 0, err
+		}
+		_ = vmc.AddDevice(blk)
+	}
+
+	// Serial log
+	serialLog := filepath.Join(filepath.Dir(vm.DiskPath), "serial.log")
+	serialDev, err := config.VirtioSerialNew(serialLog)
+	if err != nil {
+		return 0, err
+	}
+	_ = vmc.AddDevice(serialDev)
+
+	// Network NAT
+	netDev, err := config.VirtioNetNew("")
+	if err != nil {
+		return 0, err
+	}
+	_ = vmc.AddDevice(netDev)
+
+	vfvm, err := vf.NewVirtualMachine(*vmc)
+	if err != nil {
+		return 0, err
+	}
+	if err := vfvm.Start(); err != nil {
+		return 0, err
+	}
 	p.mu.Lock()
-	p.running[vm.Name] = struct{}{}
+	p.handles[vm.Name] = vfvm
 	p.mu.Unlock()
-	// TODO: create vfkit VM using library and start it
-	// For now, return current shim pid as process owner
 	return 0, nil
 }
 
 func (p *Provider) StopVM(ctx context.Context, vm domain.VM) error {
 	p.mu.Lock()
-	delete(p.running, vm.Name)
+	h := p.handles[vm.Name]
+	delete(p.handles, vm.Name)
 	p.mu.Unlock()
-	// TODO: stop vfkit VM instance
-	return nil
+	if h == nil {
+		return nil
+	}
+	return h.Stop()
 }
 
 func (p *Provider) IsRunning(ctx context.Context, vm domain.VM) (bool, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	_, ok := p.running[vm.Name]
+	_, ok := p.handles[vm.Name]
 	return ok, nil
 }
 
