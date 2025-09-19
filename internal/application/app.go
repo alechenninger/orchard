@@ -136,4 +136,30 @@ func (a *App) Stop(ctx context.Context, nameOrID string) error {
 	return a.Store.Save(ctx, *vm)
 }
 
+// Delete removes VM resources and metadata. If the VM is running and force is false,
+// it returns an error. With force=true, it will attempt a Stop first.
+func (a *App) Delete(ctx context.Context, nameOrID string, force bool) error {
+	vm, err := a.Store.Load(ctx, nameOrID)
+	if err != nil {
+		return err
+	}
+	// Determine if running
+	running := vm.PID != 0
+	if !running {
+		if p, err := a.Shim.GetPID(ctx, vm.Name); err == nil && p > 0 {
+			running = true
+			vm.PID = p
+		}
+	}
+	if running {
+		if !force {
+			return fmt.Errorf("vm %s is running; use --force to stop and delete", vm.Name)
+		}
+		if err := a.Stop(ctx, vm.Name); err != nil {
+			return err
+		}
+	}
+	return a.Store.Delete(ctx, vm.Name)
+}
+
 // defaultBaseDir is now provided by vmstore/fs as DefaultBaseDir

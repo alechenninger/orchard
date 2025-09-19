@@ -111,3 +111,52 @@ func TestStartStopUpdatesStore(t *testing.T) {
 		t.Fatalf("expected stopped with pid=0, got %v pid=%d", vm2.Status, vm2.PID)
 	}
 }
+
+func TestDeleteNonRunning(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, file, _, _ := runtime.Caller(0)
+
+	store := mem.New()
+	app := New(store, &fakeShim{}, artmem.New())
+
+	vm, err := app.Up(ctx, UpParams{ImagePath: file})
+	if err != nil {
+		t.Fatalf("up failed: %v", err)
+	}
+
+	if err := app.Delete(ctx, vm.Name, false); err != nil {
+		t.Fatalf("delete failed: %v", err)
+	}
+	if _, err := app.Store.Load(ctx, vm.Name); err == nil {
+		t.Fatalf("expected not found after delete")
+	}
+}
+
+func TestDeleteRunningRequiresForce(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, file, _, _ := runtime.Caller(0)
+
+	store := mem.New()
+	app := New(store, &fakeShim{}, artmem.New())
+
+	vm, err := app.Up(ctx, UpParams{ImagePath: file})
+	if err != nil {
+		t.Fatalf("up failed: %v", err)
+	}
+	// Simulate running by setting PID in store
+	vm.PID = 1234
+	vm.Status = "running"
+	if err := store.Save(ctx, *vm); err != nil {
+		t.Fatalf("save failed: %v", err)
+	}
+
+	if err := app.Delete(ctx, vm.Name, false); err == nil {
+		t.Fatalf("expected error when deleting running VM without force")
+	}
+	// With force, delete should succeed
+	if err := app.Delete(ctx, vm.Name, true); err != nil {
+		t.Fatalf("force delete failed: %v", err)
+	}
+}
