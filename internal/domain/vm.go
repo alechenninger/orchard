@@ -59,6 +59,7 @@ type VMStore interface {
 	Load(ctx context.Context, nameOrID string) (*VM, error)
 	Delete(ctx context.Context, nameOrID string) error
 	List(ctx context.Context) ([]VM, error)
+	RuntimePaths(ctx context.Context, name string) (VMRuntimePaths, error)
 }
 
 // VirtualizationProvider abstracts vfkit usage.
@@ -72,4 +73,15 @@ type VirtualizationProvider interface {
 type ShimProcessManager interface {
 	StartDetached(ctx context.Context, vm VM) (pid int, err error)
 	Stop(ctx context.Context, pid int) error
+	WaitReadyAndPID(ctx context.Context, vmName string) (pid int, err error)
+	GetPID(ctx context.Context, vmName string) (pid int, err error)
+}
+
+// VMRuntimePaths describes ephemeral runtime file locations for a VM.
+type VMRuntimePaths struct {
+	Dir         string
+	PIDFile     string
+	ReadyFile   string
+	LockDir     string
+	ConsoleSock string
 }

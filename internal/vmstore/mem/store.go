@@ -68,3 +68,13 @@ func (s *Store) List(ctx context.Context) ([]domain.VM, error) {
 }
 
 var _ domain.VMStore = (*Store)(nil)
+
+func (s *Store) RuntimePaths(ctx context.Context, name string) (domain.VMRuntimePaths, error) {
+	return domain.VMRuntimePaths{
+		Dir:         "/mem/" + name,
+		PIDFile:     "/mem/" + name + "/vm.pid",
+		ReadyFile:   "/mem/" + name + "/vm.ready",
+		LockDir:     "/mem/" + name + "/vm.lock.d",
+		ConsoleSock: "/mem/" + name + "/console.sock",
+	}, nil
+}

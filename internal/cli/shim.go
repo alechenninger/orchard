@@ -1,10 +1,13 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
+	"time"
 
-	"github.com/alechenninger/orchard/internal/application"
+	"github.com/alechenninger/orchard/internal/shim/proc"
+	fsstore "github.com/alechenninger/orchard/internal/vmstore/fs"
 	"github.com/spf13/cobra"
 )
 
@@ -25,10 +28,15 @@ var shimCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
 		slog.Info("shim starting", "vm", flagShimVM)
-		_ = application.NewDefault()
-		// Placeholder: later call provider to start and block
-		fmt.Println("shim would run VM", flagShimVM)
-		_ = ctx
+		cctx, cancel := context.WithCancel(ctx)
+		defer cancel()
+		store := fsstore.NewDefault()
+		if err := proc.RunChild(cctx, store, flagShimVM); err != nil {
+			return err
+		}
+		// Should not reach here until signaled; just in case
+		time.Sleep(10 * time.Millisecond)
+		fmt.Println("shim exiting for", flagShimVM)
 		return nil
 	},
 }

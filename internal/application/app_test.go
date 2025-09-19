@@ -18,7 +18,7 @@ func TestUpCreatesVMAndLists(t *testing.T) {
 	img := file
 
 	store := mem.New()
-	app := New(store)
+	app := New(store, &fakeShim{})
 
 	vm1, err := app.Up(ctx, UpParams{ImagePath: img, CPUs: 2, MemoryMiB: 1024, DiskSizeGiB: 10})
 	if err != nil {
@@ -63,6 +63,10 @@ func (f *fakeShim) StartDetached(ctx context.Context, vm domain.VM) (int, error)
 	return f.nextPID, nil
 }
 func (f *fakeShim) Stop(ctx context.Context, pid int) error { return nil }
+func (f *fakeShim) WaitReadyAndPID(ctx context.Context, vmName string) (int, error) {
+	return f.nextPID, nil
+}
+func (f *fakeShim) GetPID(ctx context.Context, vmName string) (int, error) { return f.nextPID, nil }
 
 func TestStartStopUpdatesStore(t *testing.T) {
 	t.Parallel()
@@ -70,8 +74,7 @@ func TestStartStopUpdatesStore(t *testing.T) {
 	_, file, _, _ := runtime.Caller(0)
 
 	store := mem.New()
-	app := New(store)
-	app.Shim = &fakeShim{}
+	app := New(store, &fakeShim{})
 
 	vm, err := app.Up(ctx, UpParams{ImagePath: file})
 	if err != nil {

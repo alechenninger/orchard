@@ -16,12 +16,18 @@ type App struct {
 	Shim  domain.ShimProcessManager
 }
 
-func New(store domain.VMStore) *App {
-	return &App{Store: store, Shim: shimproc.New()}
+func New(store domain.VMStore, shim domain.ShimProcessManager) *App {
+	return &App{Store: store, Shim: shim}
 }
 
 func NewDefault() *App {
-	return &App{Store: fsstore.New(defaultBaseDir()), Shim: shimproc.New()}
+	store := fsstore.NewDefault()
+	shim := procShim(store)
+	return &App{Store: store, Shim: shim}
+}
+
+func procShim(store domain.VMStore) domain.ShimProcessManager {
+	return shimproc.New(store)
 }
 
 type UpParams struct {
@@ -87,15 +93,17 @@ func (a *App) Start(ctx context.Context, nameOrID string) (*domain.VM, error) {
 	if err != nil {
 		return nil, err
 	}
-	pid, err := a.Shim.StartDetached(ctx, *vm)
+	_, err = a.Shim.StartDetached(ctx, *vm)
+	if err != nil {
+		return nil, err
+	}
+	pid, err := a.Shim.WaitReadyAndPID(ctx, vm.Name)
 	if err != nil {
 		return nil, err
 	}
 	vm.PID = pid
 	vm.Status = "running"
-	if err := a.Store.Save(ctx, *vm); err != nil {
-		return nil, err
-	}
+	_ = a.Store.Save(ctx, *vm)
 	return vm, nil
 }
 
@@ -105,7 +113,11 @@ func (a *App) Stop(ctx context.Context, nameOrID string) error {
 		return err
 	}
 	if vm.PID == 0 {
-		return nil
+		if p, err := a.Shim.GetPID(ctx, vm.Name); err == nil {
+			vm.PID = p
+		} else {
+			return nil
+		}
 	}
 	if err := a.Shim.Stop(ctx, vm.PID); err != nil {
 		return err
@@ -115,10 +127,4 @@ func (a *App) Stop(ctx context.Context, nameOrID string) error {
 	return a.Store.Save(ctx, *vm)
 }
 
-func defaultBaseDir() string {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return filepath.Join(os.TempDir(), "orchard")
-	}
-	return filepath.Join(home, ".orchard")
-}
+// defaultBaseDir is now provided by vmstore/fs as DefaultBaseDir
