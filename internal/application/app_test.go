@@ -4,7 +4,9 @@ import (
 	"context"
 	"runtime"
 	"testing"
+	"time"
 
+	artmem "github.com/alechenninger/orchard/internal/artifacts/mem"
 	"github.com/alechenninger/orchard/internal/domain"
 	"github.com/alechenninger/orchard/internal/vmstore/mem"
 )
@@ -18,7 +20,8 @@ func TestUpCreatesVMAndLists(t *testing.T) {
 	img := file
 
 	store := mem.New()
-	app := New(store, &fakeShim{})
+	app := New(store, &fakeShim{}, artmem.New())
+	app.Clock = fixedClock{t: time.Unix(0, 1)}
 
 	vm1, err := app.Up(ctx, UpParams{ImagePath: img, CPUs: 2, MemoryMiB: 1024, DiskSizeGiB: 10})
 	if err != nil {
@@ -40,6 +43,7 @@ func TestUpCreatesVMAndLists(t *testing.T) {
 	}
 
 	// Create a second VM and ensure ordering by CreatedAt
+	app.Clock = fixedClock{t: time.Unix(0, 2)}
 	vm2, err := app.Up(ctx, UpParams{ImagePath: img, CPUs: 2, MemoryMiB: 1024, DiskSizeGiB: 10})
 	if err != nil {
 		t.Fatalf("Up 2 failed: %v", err)
@@ -68,13 +72,17 @@ func (f *fakeShim) WaitReadyAndPID(ctx context.Context, vmName string) (int, err
 }
 func (f *fakeShim) GetPID(ctx context.Context, vmName string) (int, error) { return f.nextPID, nil }
 
+type fixedClock struct{ t time.Time }
+
+func (f fixedClock) Now() time.Time { return f.t }
+
 func TestStartStopUpdatesStore(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, file, _, _ := runtime.Caller(0)
 
 	store := mem.New()
-	app := New(store, &fakeShim{})
+	app := New(store, &fakeShim{}, artmem.New())
 
 	vm, err := app.Up(ctx, UpParams{ImagePath: file})
 	if err != nil {

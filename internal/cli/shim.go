@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"time"
 
+	runfs "github.com/alechenninger/orchard/internal/runstate/fs"
 	"github.com/alechenninger/orchard/internal/shim/proc"
 	fsstore "github.com/alechenninger/orchard/internal/vmstore/fs"
 	"github.com/spf13/cobra"
@@ -31,7 +32,8 @@ var shimCmd = &cobra.Command{
 		cctx, cancel := context.WithCancel(ctx)
 		defer cancel()
 		store := fsstore.NewDefault()
-		if err := proc.RunChild(cctx, store, flagShimVM); err != nil {
+		run := runfs.NewDefault()
+		if err := proc.RunChild(cctx, store, run, flagShimVM); err != nil {
 			return err
 		}
 		// Should not reach here until signaled; just in case

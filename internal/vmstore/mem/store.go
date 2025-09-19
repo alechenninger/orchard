@@ -32,7 +32,7 @@ func (s *Store) Save(ctx context.Context, vm domain.VM) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if vm.CreatedAt == 0 {
-		vm.CreatedAt = time.Now().Unix()
+		vm.CreatedAt = time.Now().UnixNano()
 	}
 	s.vms[vm.Name] = vm
 	return nil

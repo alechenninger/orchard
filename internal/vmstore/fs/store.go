@@ -70,7 +70,7 @@ func (s *Store) Save(ctx context.Context, vm domain.VM) error {
 		return err
 	}
 	if vm.CreatedAt == 0 {
-		vm.CreatedAt = time.Now().Unix()
+		vm.CreatedAt = time.Now().UnixNano()
 	}
 	b, _ := json.MarshalIndent(vm, "", "  ")
 	return os.WriteFile(filepath.Join(d, "config.json"), b, 0o644)

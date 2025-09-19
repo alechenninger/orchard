@@ -6,28 +6,30 @@ import (
 	"os"
 	"path/filepath"
 
+	artfs "github.com/alechenninger/orchard/internal/artifacts/fs"
 	"github.com/alechenninger/orchard/internal/domain"
+	runfs "github.com/alechenninger/orchard/internal/runstate/fs"
 	shimproc "github.com/alechenninger/orchard/internal/shim/proc"
 	fsstore "github.com/alechenninger/orchard/internal/vmstore/fs"
 )
 
 type App struct {
-	Store domain.VMStore
-	Shim  domain.ShimProcessManager
+	Store     domain.VMStore
+	Shim      domain.ShimProcessManager
+	Artifacts domain.VMArtifacts
+	Clock     domain.Clock
 }
 
-func New(store domain.VMStore, shim domain.ShimProcessManager) *App {
-	return &App{Store: store, Shim: shim}
+func New(store domain.VMStore, shim domain.ShimProcessManager, art domain.VMArtifacts) *App {
+	return &App{Store: store, Shim: shim, Artifacts: art, Clock: domain.RealClock{}}
 }
 
 func NewDefault() *App {
 	store := fsstore.NewDefault()
-	shim := procShim(store)
-	return &App{Store: store, Shim: shim}
-}
-
-func procShim(store domain.VMStore) domain.ShimProcessManager {
-	return shimproc.New(store)
+	run := runfs.NewDefault()
+	shim := domain.ShimProcessManager(shimproc.New(store, run))
+	art := artfs.NewDefault()
+	return &App{Store: store, Shim: shim, Artifacts: art, Clock: domain.RealClock{}}
 }
 
 type UpParams struct {
@@ -78,7 +80,17 @@ func (a *App) Up(ctx context.Context, p UpParams) (*domain.VM, error) {
 	}
 	_ = sshKeyPath // reserved for cloud-init later
 
+	// Ensure deterministic CreatedAt via injected clock if not set yet
+	if vm.CreatedAt == 0 && a.Clock != nil {
+		vm.CreatedAt = a.Clock.Now().UnixNano()
+	}
 	if err := a.Store.Save(ctx, vm); err != nil {
+		return nil, err
+	}
+	if err := a.Artifacts.Prepare(ctx, &vm); err != nil {
+		return nil, err
+	}
+	if err := a.Store.Save(ctx, vm); err != nil { // persist updated paths
 		return nil, err
 	}
 	return &vm, nil

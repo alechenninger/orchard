@@ -1,0 +1,170 @@
+package fs
+
+import (
+	"bufio"
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"syscall"
+	"time"
+
+	"github.com/alechenninger/orchard/internal/domain"
+	fsstore "github.com/alechenninger/orchard/internal/vmstore/fs"
+)
+
+type Service struct {
+	baseDir string
+}
+
+func New(baseDir string) *Service { return &Service{baseDir: baseDir} }
+
+func NewDefault() *Service { return New(fsstore.DefaultBaseDir()) }
+
+func (s *Service) vmDir(name string) string { return filepath.Join(s.baseDir, "vms", name) }
+
+func (s *Service) paths(name string) (pid, ready, lock string) {
+	d := s.vmDir(name)
+	return filepath.Join(d, "vm.pid"), filepath.Join(d, "vm.ready"), filepath.Join(d, "vm.lock.d")
+}
+
+func (s *Service) AcquireLock(ctx context.Context, vmName string) (func() error, error) {
+	_, _, lock := s.paths(vmName)
+	if err := os.MkdirAll(s.vmDir(vmName), 0o755); err != nil {
+		return nil, err
+	}
+	if err := os.Mkdir(lock, 0o755); err != nil {
+		return nil, fmt.Errorf("lock in use: %w", err)
+	}
+	return func() error { return os.RemoveAll(lock) }, nil
+}
+
+func (s *Service) WritePID(ctx context.Context, vmName string, pid int) error {
+	p, _, _ := s.paths(vmName)
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		return err
+	}
+	tmp := p + ".tmp"
+	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	w := bufio.NewWriter(f)
+	if _, err := fmt.Fprintf(w, "%d\n", pid); err != nil {
+		f.Close()
+		return err
+	}
+	if err := w.Flush(); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, p); err != nil {
+		return err
+	}
+	if df, err := os.Open(filepath.Dir(p)); err == nil {
+		_ = df.Sync()
+		_ = df.Close()
+	}
+	return nil
+}
+
+func (s *Service) ReadPID(ctx context.Context, vmName string) (int, error) {
+	p, _, _ := s.paths(vmName)
+	f, err := os.Open(p)
+	if err != nil {
+		return 0, err
+	}
+	defer f.Close()
+	var pid int
+	if _, err := fmt.Fscan(bufio.NewReader(f), &pid); err != nil {
+		return 0, err
+	}
+	return pid, nil
+}
+
+func (s *Service) MarkReady(ctx context.Context, vmName string) error {
+	_, r, _ := s.paths(vmName)
+	if err := os.MkdirAll(filepath.Dir(r), 0o755); err != nil {
+		return err
+	}
+	tmp := r + ".tmp"
+	if err := os.WriteFile(tmp, []byte(time.Now().Format(time.RFC3339Nano)), 0o644); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, r); err != nil {
+		return err
+	}
+	if df, err := os.Open(filepath.Dir(r)); err == nil {
+		_ = df.Sync()
+		_ = df.Close()
+	}
+	return nil
+}
+
+func (s *Service) Clear(ctx context.Context, vmName string) error {
+	p, r, _ := s.paths(vmName)
+	_ = os.Remove(p)
+	_ = os.Remove(r)
+	return nil
+}
+
+func (s *Service) CleanupIfStale(ctx context.Context, vmName string) error {
+	p, r, l := s.paths(vmName)
+	f, err := os.Open(p)
+	if err != nil {
+		return nil
+	}
+	defer f.Close()
+	var pid int
+	if _, err := fmt.Fscan(bufio.NewReader(f), &pid); err != nil {
+		return nil
+	}
+	if err := syscallKill(pid, 0); err == nil {
+		return nil
+	}
+	_ = os.Remove(p)
+	_ = os.Remove(r)
+	_ = os.RemoveAll(l)
+	return nil
+}
+
+func (s *Service) WaitReadyAndPID(ctx context.Context, vmName string) (int, error) {
+	p, r, _ := s.paths(vmName)
+	deadline := time.Now().Add(15 * time.Second)
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if _, err := os.Stat(r); err == nil {
+			f, err := os.Open(p)
+			if err != nil {
+				return 0, err
+			}
+			defer f.Close()
+			var pid int
+			if _, err := fmt.Fscan(bufio.NewReader(f), &pid); err != nil {
+				return 0, err
+			}
+			return pid, nil
+		}
+		if time.Now().After(deadline) {
+			return 0, fmt.Errorf("timeout waiting for readiness of %s", vmName)
+		}
+		select {
+		case <-ctx.Done():
+			return 0, ctx.Err()
+		case <-ticker.C:
+		}
+	}
+}
+
+// small indirection for testability
+var syscallKill = func(pid int, sig int) error { return syscall.Kill(pid, syscall.Signal(sig)) }
+
+var _ domain.RuntimeState = (*Service)(nil)

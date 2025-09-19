@@ -59,7 +59,6 @@ type VMStore interface {
 	Load(ctx context.Context, nameOrID string) (*VM, error)
 	Delete(ctx context.Context, nameOrID string) error
 	List(ctx context.Context) ([]VM, error)
-	RuntimePaths(ctx context.Context, name string) (VMRuntimePaths, error)
 }
 
 // VirtualizationProvider abstracts vfkit usage.
@@ -84,4 +83,22 @@ type VMRuntimePaths struct {
 	ReadyFile   string
 	LockDir     string
 	ConsoleSock string
+}
+
+// VMArtifacts prepares per-VM artifacts on the host filesystem.
+type VMArtifacts interface {
+	// Prepare ensures per-VM directory exists, clones/copies base image to disk.img,
+	// creates nvram.bin placeholder, and sets SeedISOPath.
+	Prepare(ctx context.Context, vm *VM) error
+}
+
+// RuntimeState abstracts ephemeral runtime coordination for a VM on the host.
+type RuntimeState interface {
+	AcquireLock(ctx context.Context, vmName string) (release func() error, err error)
+	WritePID(ctx context.Context, vmName string, pid int) error
+	ReadPID(ctx context.Context, vmName string) (int, error)
+	MarkReady(ctx context.Context, vmName string) error
+	Clear(ctx context.Context, vmName string) error
+	CleanupIfStale(ctx context.Context, vmName string) error
+	WaitReadyAndPID(ctx context.Context, vmName string) (int, error)
 }
