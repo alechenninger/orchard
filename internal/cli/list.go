@@ -7,8 +7,7 @@ import (
 	"path/filepath"
 	"text/tabwriter"
 
-	"github.com/alechenninger/orchard/internal/domain"
-	fsstore "github.com/alechenninger/orchard/internal/vmstore/fs"
+	"github.com/alechenninger/orchard/internal/application"
 	"github.com/spf13/cobra"
 )
 
@@ -21,8 +20,8 @@ var listCmd = &cobra.Command{
 	Short: "List VMs",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
-		store := fsstore.New(baseDir())
-		vms, err := store.List(ctx)
+		app := application.NewDefault()
+		vms, err := app.ListVMs(ctx)
 		if err != nil {
 			return err
 		}
@@ -55,5 +54,3 @@ func ifEmpty(s, alt string) string {
 	}
 	return s
 }
-
-var _ domain.VMStore = (*fsstore.Store)(nil)
