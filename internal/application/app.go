@@ -3,10 +3,12 @@ package application
 import (
 	"context"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 
 	artfs "github.com/alechenninger/orchard/internal/artifacts/fs"
+	seed "github.com/alechenninger/orchard/internal/cloudinit/seed"
 	"github.com/alechenninger/orchard/internal/domain"
 	runfs "github.com/alechenninger/orchard/internal/runstate/fs"
 	shimproc "github.com/alechenninger/orchard/internal/shim/proc"
@@ -87,6 +89,17 @@ func (a *App) Up(ctx context.Context, p UpParams) (*domain.VM, error) {
 	if err := a.Artifacts.Prepare(ctx, &vm); err != nil {
 		return nil, err
 	}
+	// Generate cloud-init seed ISO: require an SSH public key (provided or auto-detected)
+	if sshKeyPath == "" {
+		return nil, fmt.Errorf("no SSH public key found; specify --ssh-key or create ~/.ssh/id_ed25519.pub")
+	}
+	kb, err := os.ReadFile(sshKeyPath)
+	if err != nil {
+		return nil, fmt.Errorf("reading ssh key: %w", err)
+	}
+	if err := seed.New().Generate(ctx, vm, string(kb), vm.SeedISOPath); err != nil {
+		return nil, err
+	}
 	if err := a.Store.Save(ctx, vm); err != nil { // persist updated paths
 		return nil, err
 	}
@@ -160,4 +173,36 @@ func (a *App) Delete(ctx context.Context, nameOrID string, force bool) error {
 	return a.Store.Delete(ctx, vm.Name)
 }
 
-// defaultBaseDir is now provided by vmstore/fs as DefaultBaseDir
+// Status reports whether the VM is running and the live PID if available.
+func (a *App) Status(ctx context.Context, nameOrID string) (bool, int, error) {
+	vm, err := a.Store.Load(ctx, nameOrID)
+	if err != nil {
+		return false, 0, err
+	}
+	if p, err := a.Shim.GetPID(ctx, vm.Name); err == nil && p > 0 {
+		return true, p, nil
+	}
+	return false, 0, nil
+}
+
+// IP resolves the VM's hostname via mDNS (NAME.local) and returns the first IPv4.
+func (a *App) IP(ctx context.Context, nameOrID string) (string, error) {
+	vm, err := a.Store.Load(ctx, nameOrID)
+	if err != nil {
+		return "", err
+	}
+	host := vm.Name + ".local"
+	addrs, err := net.LookupIP(host)
+	if err != nil {
+		return "", err
+	}
+	for _, ip := range addrs {
+		if ip.To4() != nil {
+			return ip.String(), nil
+		}
+	}
+	if len(addrs) > 0 {
+		return addrs[0].String(), nil
+	}
+	return "", fmt.Errorf("no IP found for %s", host)
+}

@@ -57,6 +57,16 @@ func (p *Provider) StartVM(ctx context.Context, vm domain.VM) (int, error) {
 		_ = vmc.AddDevice(rng)
 	}
 
+	// Attach cloud-init seed ISO only if the file exists
+	if vm.SeedISOPath != "" {
+		if st, err := os.Stat(vm.SeedISOPath); err == nil && !st.IsDir() {
+			if blk, err := config.VirtioBlkNew(vm.SeedISOPath); err == nil {
+				blk.ReadOnly = true
+				_ = vmc.AddDevice(blk)
+			}
+		}
+	}
+
 	vfvm, err := vf.NewVirtualMachine(*vmc)
 	if err != nil {
 		return 0, err
