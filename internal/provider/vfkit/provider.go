@@ -2,6 +2,7 @@ package vfkit
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"sync"
 
@@ -19,7 +20,12 @@ func New() *Provider { return &Provider{handles: make(map[string]*vf.VirtualMach
 
 func (p *Provider) StartVM(ctx context.Context, vm domain.VM) (int, error) {
 	// Build vfkit config
-	boot := config.NewEFIBootloader(vm.EFIVarsPath, false)
+	// Decide whether to create/initialize the EFI variable store
+	createVarStore := false
+	if st, err := os.Stat(vm.EFIVarsPath); err != nil || st.Size() == 0 {
+		createVarStore = true
+	}
+	boot := config.NewEFIBootloader(vm.EFIVarsPath, createVarStore)
 	vmc := config.NewVirtualMachine(uint(vm.CPUs), uint64(vm.MemoryMiB), boot)
 
 	// Disk
@@ -45,6 +51,11 @@ func (p *Provider) StartVM(ctx context.Context, vm domain.VM) (int, error) {
 		return 0, err
 	}
 	_ = vmc.AddDevice(netDev)
+
+	// RNG device (good practice for Linux guests)
+	if rng, err := config.VirtioRngNew(); err == nil {
+		_ = vmc.AddDevice(rng)
+	}
 
 	vfvm, err := vf.NewVirtualMachine(*vmc)
 	if err != nil {

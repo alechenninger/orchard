@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"runtime"
 	"syscall"
 
 	"github.com/alechenninger/orchard/internal/domain"
@@ -12,6 +13,9 @@ import (
 
 // RunChild is invoked in the _shim process to own the VM lifecycle.
 func RunChild(ctx context.Context, store domain.VMStore, run domain.RuntimeState, provider domain.VirtualizationProvider, name string) error {
+	// Virtualization.framework APIs require running on the main thread
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	vm, err := store.Load(ctx, name)
 	if err != nil {
 		return err
