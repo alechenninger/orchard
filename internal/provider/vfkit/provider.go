@@ -45,8 +45,9 @@ func (p *Provider) StartVM(ctx context.Context, vm domain.VM) (int, error) {
 	}
 	_ = vmc.AddDevice(serialDev)
 
-	// Network NAT
-	netDev, err := config.VirtioNetNew("")
+	// Network NAT with deterministic MAC if provided
+	mac := vm.MACAddress
+	netDev, err := config.VirtioNetNew(mac)
 	if err != nil {
 		return 0, err
 	}
