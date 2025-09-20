@@ -23,22 +23,6 @@ type VM struct {
 	Status      string `json:"status"`
 }
 
-// VMService defines high-level VM operations.
-type VMService interface {
-	// Create prepares VM resources but does not start it.
-	Create(ctx context.Context, params CreateParams) (*VM, error)
-	// Start launches the VM (possibly via shim) and returns when ready or detached.
-	Start(ctx context.Context, nameOrID string, opts StartOptions) (*VM, error)
-	// Stop gracefully stops the VM.
-	Stop(ctx context.Context, nameOrID string) error
-	// Delete removes VM resources.
-	Delete(ctx context.Context, nameOrID string) error
-	// List returns known VMs.
-	List(ctx context.Context) ([]VM, error)
-	// Get returns a single VM by name or id.
-	Get(ctx context.Context, nameOrID string) (*VM, error)
-}
-
 type CreateParams struct {
 	Name        string
 	BaseImage   string // path to base image provided by user
@@ -74,15 +58,6 @@ type ShimProcessManager interface {
 	Stop(ctx context.Context, pid int) error
 	WaitReadyAndPID(ctx context.Context, vmName string) (pid int, err error)
 	GetPID(ctx context.Context, vmName string) (pid int, err error)
-}
-
-// VMRuntimePaths describes ephemeral runtime file locations for a VM.
-type VMRuntimePaths struct {
-	Dir         string
-	PIDFile     string
-	ReadyFile   string
-	LockDir     string
-	ConsoleSock string
 }
 
 // VMArtifacts prepares per-VM artifacts on the host filesystem.

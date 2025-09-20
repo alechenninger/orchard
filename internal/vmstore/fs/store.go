@@ -127,20 +127,6 @@ func (s *Store) List(ctx context.Context) ([]domain.VM, error) {
 
 var _ domain.VMStore = (*Store)(nil)
 
-func (s *Store) RuntimePaths(ctx context.Context, name string) (domain.VMRuntimePaths, error) {
-	if err := s.ensureDirs(); err != nil {
-		return domain.VMRuntimePaths{}, err
-	}
-	d := s.vmDir(name)
-	return domain.VMRuntimePaths{
-		Dir:         d,
-		PIDFile:     filepath.Join(d, "vm.pid"),
-		ReadyFile:   filepath.Join(d, "vm.ready"),
-		LockDir:     filepath.Join(d, "vm.lock.d"),
-		ConsoleSock: filepath.Join(d, "console.sock"),
-	}, nil
-}
-
 // DefaultBaseDir returns the default base directory for VM state.
 func DefaultBaseDir() string {
 	home, err := os.UserHomeDir()
