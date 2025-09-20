@@ -14,3 +14,8 @@ run: sign
 	./$(OUT)
 
 
+.PHONY: install
+install: sign
+	sudo install -m 0755 $(OUT) /usr/local/bin/orchard
+
+
