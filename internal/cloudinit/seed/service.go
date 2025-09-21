@@ -3,45 +3,55 @@ package seed
 import (
 	"context"
 	"fmt"
-	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
+	"github.com/alechenninger/orchard/internal/cloudinit/hdiutil"
 	"github.com/alechenninger/orchard/internal/domain"
+	"github.com/spf13/afero"
 )
 
-type Service struct{}
+// CIDATABuilder turns a directory containing cloud-init NoCloud files into an ISO image at dstPath.
+type CIDATABuilder interface {
+	Build(ctx context.Context, fs afero.Fs, srcDir string, dstPath string) error
+}
 
-func New() *Service { return &Service{} }
+type Service struct {
+	fs      afero.Fs
+	builder CIDATABuilder
+}
+
+func New() *Service { return &Service{fs: afero.NewOsFs(), builder: hdiutil.Builder{}} }
+
+func NewWithFSAndBuilder(fs afero.Fs, builder CIDATABuilder) *Service {
+	return &Service{fs: fs, builder: builder}
+}
 
 // Generate creates a NoCloud seed ISO at dstPath with the provided ssh key and vm hostname.
 // It requires macOS hdiutil to be available.
 func (s *Service) Generate(ctx context.Context, vm domain.VM, sshAuthorizedKey string, dstPath string) error {
-	workDir, err := os.MkdirTemp("", "orchard-seed-")
+	af := &afero.Afero{Fs: s.fs}
+	workDir, err := af.TempDir("", "orchard-seed-")
 	if err != nil {
 		return err
 	}
-	defer os.RemoveAll(workDir)
+	defer af.RemoveAll(workDir)
 
 	userData := buildUserData(vm.Hostname, sshAuthorizedKey)
 	metaData := fmt.Sprintf("instance-id: %s\nlocal-hostname: %s\n", vm.Name, vm.Hostname)
 
-	if err := os.WriteFile(filepath.Join(workDir, "user-data"), []byte(userData), 0o644); err != nil {
+	if err := af.WriteFile(filepath.Join(workDir, "user-data"), []byte(userData), 0o644); err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(workDir, "meta-data"), []byte(metaData), 0o644); err != nil {
+	if err := af.WriteFile(filepath.Join(workDir, "meta-data"), []byte(metaData), 0o644); err != nil {
 		return err
 	}
 
-	if err := os.MkdirAll(filepath.Dir(dstPath), 0o755); err != nil {
+	if err := af.MkdirAll(filepath.Dir(dstPath), 0o755); err != nil {
 		return err
 	}
-	// hdiutil makehybrid -iso -joliet -default-volume-name CIDATA <workDir> -o <dstPath>
-	cmd := exec.CommandContext(ctx, "hdiutil", "makehybrid", "-iso", "-joliet", "-default-volume-name", "CIDATA", workDir, "-o", dstPath)
-	cmd.Stdout = nil
-	cmd.Stderr = nil
-	if err := cmd.Run(); err != nil {
+	// Build CIDATA ISO from workDir into dstPath
+	if err := s.builder.Build(ctx, s.fs, workDir, dstPath); err != nil {
 		return fmt.Errorf("hdiutil makehybrid failed: %w", err)
 	}
 	return nil

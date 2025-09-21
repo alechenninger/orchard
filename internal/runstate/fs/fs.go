@@ -4,22 +4,27 @@ import (
 	"bufio"
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 	"syscall"
 	"time"
 
+	"os"
+
 	"github.com/alechenninger/orchard/internal/domain"
 	fsstore "github.com/alechenninger/orchard/internal/vmstore/fs"
+	"github.com/spf13/afero"
 )
 
 type Service struct {
 	baseDir string
+	fs      afero.Fs
 }
 
-func New(baseDir string) *Service { return &Service{baseDir: baseDir} }
+func New(baseDir string) *Service { return &Service{baseDir: baseDir, fs: afero.NewOsFs()} }
 
 func NewDefault() *Service { return New(fsstore.DefaultBaseDir()) }
+
+func NewWithFS(baseDir string, fsys afero.Fs) *Service { return &Service{baseDir: baseDir, fs: fsys} }
 
 func (s *Service) vmDir(name string) string { return filepath.Join(s.baseDir, "vms", name) }
 
@@ -30,22 +35,24 @@ func (s *Service) paths(name string) (pid, ready, lock string) {
 
 func (s *Service) AcquireLock(ctx context.Context, vmName string) (func() error, error) {
 	_, _, lock := s.paths(vmName)
-	if err := os.MkdirAll(s.vmDir(vmName), 0o755); err != nil {
+	af := &afero.Afero{Fs: s.fs}
+	if err := af.MkdirAll(s.vmDir(vmName), 0o755); err != nil {
 		return nil, err
 	}
-	if err := os.Mkdir(lock, 0o755); err != nil {
+	if err := s.fs.Mkdir(lock, 0o755); err != nil {
 		return nil, fmt.Errorf("lock in use: %w", err)
 	}
-	return func() error { return os.RemoveAll(lock) }, nil
+	return func() error { return af.RemoveAll(lock) }, nil
 }
 
 func (s *Service) WritePID(ctx context.Context, vmName string, pid int) error {
 	p, _, _ := s.paths(vmName)
-	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+	af := &afero.Afero{Fs: s.fs}
+	if err := af.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 		return err
 	}
 	tmp := p + ".tmp"
-	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
+	f, err := s.fs.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
 	if err != nil {
 		return err
 	}
@@ -65,10 +72,10 @@ func (s *Service) WritePID(ctx context.Context, vmName string, pid int) error {
 	if err := f.Close(); err != nil {
 		return err
 	}
-	if err := os.Rename(tmp, p); err != nil {
+	if err := s.fs.Rename(tmp, p); err != nil {
 		return err
 	}
-	if df, err := os.Open(filepath.Dir(p)); err == nil {
+	if df, err := s.fs.Open(filepath.Dir(p)); err == nil {
 		_ = df.Sync()
 		_ = df.Close()
 	}
@@ -77,7 +84,7 @@ func (s *Service) WritePID(ctx context.Context, vmName string, pid int) error {
 
 func (s *Service) ReadPID(ctx context.Context, vmName string) (int, error) {
 	p, _, _ := s.paths(vmName)
-	f, err := os.Open(p)
+	f, err := s.fs.Open(p)
 	if err != nil {
 		return 0, err
 	}
@@ -91,17 +98,18 @@ func (s *Service) ReadPID(ctx context.Context, vmName string) (int, error) {
 
 func (s *Service) MarkReady(ctx context.Context, vmName string) error {
 	_, r, _ := s.paths(vmName)
-	if err := os.MkdirAll(filepath.Dir(r), 0o755); err != nil {
+	af := &afero.Afero{Fs: s.fs}
+	if err := af.MkdirAll(filepath.Dir(r), 0o755); err != nil {
 		return err
 	}
 	tmp := r + ".tmp"
-	if err := os.WriteFile(tmp, []byte(time.Now().Format(time.RFC3339Nano)), 0o644); err != nil {
+	if err := af.WriteFile(tmp, []byte(time.Now().Format(time.RFC3339Nano)), 0o644); err != nil {
 		return err
 	}
-	if err := os.Rename(tmp, r); err != nil {
+	if err := s.fs.Rename(tmp, r); err != nil {
 		return err
 	}
-	if df, err := os.Open(filepath.Dir(r)); err == nil {
+	if df, err := s.fs.Open(filepath.Dir(r)); err == nil {
 		_ = df.Sync()
 		_ = df.Close()
 	}
@@ -110,14 +118,14 @@ func (s *Service) MarkReady(ctx context.Context, vmName string) error {
 
 func (s *Service) Clear(ctx context.Context, vmName string) error {
 	p, r, _ := s.paths(vmName)
-	_ = os.Remove(p)
-	_ = os.Remove(r)
+	_ = s.fs.Remove(p)
+	_ = s.fs.Remove(r)
 	return nil
 }
 
 func (s *Service) CleanupIfStale(ctx context.Context, vmName string) error {
 	p, r, l := s.paths(vmName)
-	f, err := os.Open(p)
+	f, err := s.fs.Open(p)
 	if err != nil {
 		return nil
 	}
@@ -129,9 +137,9 @@ func (s *Service) CleanupIfStale(ctx context.Context, vmName string) error {
 	if err := syscallKill(pid, 0); err == nil {
 		return nil
 	}
-	_ = os.Remove(p)
-	_ = os.Remove(r)
-	_ = os.RemoveAll(l)
+	_ = s.fs.Remove(p)
+	_ = s.fs.Remove(r)
+	_ = s.fs.RemoveAll(l)
 	return nil
 }
 
@@ -141,8 +149,8 @@ func (s *Service) WaitReadyAndPID(ctx context.Context, vmName string) (int, erro
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 	for {
-		if _, err := os.Stat(r); err == nil {
-			f, err := os.Open(p)
+		if _, err := s.fs.Stat(r); err == nil {
+			f, err := s.fs.Open(p)
 			if err != nil {
 				return 0, err
 			}

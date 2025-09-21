@@ -4,8 +4,9 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"os"
 	"path/filepath"
+
+	"os"
 
 	artfs "github.com/alechenninger/orchard/internal/artifacts/fs"
 	seed "github.com/alechenninger/orchard/internal/cloudinit/seed"
@@ -13,6 +14,7 @@ import (
 	runfs "github.com/alechenninger/orchard/internal/runstate/fs"
 	shimproc "github.com/alechenninger/orchard/internal/shim/proc"
 	fsstore "github.com/alechenninger/orchard/internal/vmstore/fs"
+	"github.com/spf13/afero"
 )
 
 type App struct {
@@ -20,10 +22,11 @@ type App struct {
 	Shim      domain.ShimProcessManager
 	Artifacts domain.VMArtifacts
 	Clock     domain.Clock
+	FS        afero.Fs
 }
 
 func New(store domain.VMStore, shim domain.ShimProcessManager, art domain.VMArtifacts) *App {
-	return &App{Store: store, Shim: shim, Artifacts: art, Clock: domain.RealClock{}}
+	return &App{Store: store, Shim: shim, Artifacts: art, Clock: domain.RealClock{}, FS: afero.NewOsFs()}
 }
 
 func NewDefault() *App {
@@ -31,7 +34,7 @@ func NewDefault() *App {
 	run := runfs.NewDefault()
 	shim := domain.ShimProcessManager(shimproc.New(store, run))
 	art := artfs.NewDefault()
-	return &App{Store: store, Shim: shim, Artifacts: art, Clock: domain.RealClock{}}
+	return &App{Store: store, Shim: shim, Artifacts: art, Clock: domain.RealClock{}, FS: afero.NewOsFs()}
 }
 
 type UpParams struct {
@@ -47,7 +50,7 @@ func (a *App) Up(ctx context.Context, p UpParams) (*domain.VM, error) {
 	if err != nil {
 		return nil, err
 	}
-	if _, err := os.Stat(absImage); err != nil {
+	if _, err := a.FS.Stat(absImage); err != nil {
 		return nil, fmt.Errorf("image path invalid: %w", err)
 	}
 
@@ -59,7 +62,7 @@ func (a *App) Up(ctx context.Context, p UpParams) (*domain.VM, error) {
 			filepath.Join(home, ".ssh", "id_rsa.pub"),
 		}
 		for _, c := range candidates {
-			if _, err := os.Stat(c); err == nil {
+			if _, err := a.FS.Stat(c); err == nil {
 				sshKeyPath = c
 				break
 			}
@@ -93,7 +96,7 @@ func (a *App) Up(ctx context.Context, p UpParams) (*domain.VM, error) {
 	if sshKeyPath == "" {
 		return nil, fmt.Errorf("no SSH public key found; specify --ssh-key or create ~/.ssh/id_ed25519.pub")
 	}
-	kb, err := os.ReadFile(sshKeyPath)
+	kb, err := afero.ReadFile(a.FS, sshKeyPath)
 	if err != nil {
 		return nil, fmt.Errorf("reading ssh key: %w", err)
 	}

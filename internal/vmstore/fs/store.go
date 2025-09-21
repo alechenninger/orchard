@@ -5,24 +5,27 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
+	"os"
+
 	"github.com/alechenninger/orchard/internal/domain"
+	"github.com/spf13/afero"
 )
 
 type Store struct {
 	baseDir string
 	mu      sync.Mutex
+	fs      afero.Fs
 }
 
-func New(baseDir string) *Store {
-	return &Store{baseDir: baseDir}
-}
+func New(baseDir string) *Store { return &Store{baseDir: baseDir, fs: afero.NewOsFs()} }
+
+func NewWithFS(baseDir string, fsys afero.Fs) *Store { return &Store{baseDir: baseDir, fs: fsys} }
 
 // NewDefault constructs a Store rooted at the default base directory.
 func NewDefault() *Store {
@@ -30,7 +33,8 @@ func NewDefault() *Store {
 }
 
 func (s *Store) ensureDirs() error {
-	return os.MkdirAll(filepath.Join(s.baseDir, "vms"), 0o755)
+	af := &afero.Afero{Fs: s.fs}
+	return af.MkdirAll(filepath.Join(s.baseDir, "vms"), 0o755)
 }
 
 func (s *Store) vmDir(name string) string {
@@ -40,48 +44,51 @@ func (s *Store) vmDir(name string) string {
 func (s *Store) NextName(ctx context.Context) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	af := &afero.Afero{Fs: s.fs}
 	if err := s.ensureDirs(); err != nil {
 		return "", err
 	}
 	seqFile := filepath.Join(s.baseDir, "state", "names.json")
-	if err := os.MkdirAll(filepath.Dir(seqFile), 0o755); err != nil {
+	if err := af.MkdirAll(filepath.Dir(seqFile), 0o755); err != nil {
 		return "", err
 	}
 	type namesState struct{ Next int }
 	st := namesState{Next: 1}
-	if b, err := os.ReadFile(seqFile); err == nil {
+	if b, err := af.ReadFile(seqFile); err == nil {
 		_ = json.Unmarshal(b, &st)
 	}
 	name := fmt.Sprintf("vm-%03d", st.Next)
 	st.Next++
 	b, _ := json.MarshalIndent(st, "", "  ")
-	if err := os.WriteFile(seqFile, b, 0o644); err != nil {
+	if err := af.WriteFile(seqFile, b, 0o644); err != nil {
 		return "", err
 	}
 	return name, nil
 }
 
 func (s *Store) Save(ctx context.Context, vm domain.VM) error {
+	af := &afero.Afero{Fs: s.fs}
 	if err := s.ensureDirs(); err != nil {
 		return err
 	}
 	d := s.vmDir(vm.Name)
-	if err := os.MkdirAll(d, 0o755); err != nil {
+	if err := af.MkdirAll(d, 0o755); err != nil {
 		return err
 	}
 	if vm.CreatedAt == 0 {
 		vm.CreatedAt = time.Now().UnixNano()
 	}
 	b, _ := json.MarshalIndent(vm, "", "  ")
-	return os.WriteFile(filepath.Join(d, "config.json"), b, 0o644)
+	return af.WriteFile(filepath.Join(d, "config.json"), b, 0o644)
 }
 
 func (s *Store) Load(ctx context.Context, nameOrID string) (*domain.VM, error) {
+	af := &afero.Afero{Fs: s.fs}
 	if err := s.ensureDirs(); err != nil {
 		return nil, err
 	}
 	d := s.vmDir(nameOrID)
-	b, err := os.ReadFile(filepath.Join(d, "config.json"))
+	b, err := af.ReadFile(filepath.Join(d, "config.json"))
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, fmt.Errorf("vm %s not found", nameOrID)
@@ -96,18 +103,20 @@ func (s *Store) Load(ctx context.Context, nameOrID string) (*domain.VM, error) {
 }
 
 func (s *Store) Delete(ctx context.Context, nameOrID string) error {
+	af := &afero.Afero{Fs: s.fs}
 	if err := s.ensureDirs(); err != nil {
 		return err
 	}
 	d := s.vmDir(nameOrID)
-	return os.RemoveAll(d)
+	return af.RemoveAll(d)
 }
 
 func (s *Store) List(ctx context.Context) ([]domain.VM, error) {
+	af := &afero.Afero{Fs: s.fs}
 	if err := s.ensureDirs(); err != nil {
 		return nil, err
 	}
-	entries, err := os.ReadDir(filepath.Join(s.baseDir, "vms"))
+	entries, err := af.ReadDir(filepath.Join(s.baseDir, "vms"))
 	if err != nil {
 		return nil, err
 	}

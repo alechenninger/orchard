@@ -2,27 +2,33 @@ package vfkit
 
 import (
 	"context"
-	"os"
 	"path/filepath"
 	"sync"
 
 	"github.com/alechenninger/orchard/internal/domain"
 	"github.com/crc-org/vfkit/pkg/config"
 	"github.com/crc-org/vfkit/pkg/vf"
+	"github.com/spf13/afero"
 )
 
 type Provider struct {
 	mu      sync.Mutex
 	handles map[string]*vf.VirtualMachine
+	fs      afero.Fs
 }
 
-func New() *Provider { return &Provider{handles: make(map[string]*vf.VirtualMachine)} }
+func New() *Provider {
+	return &Provider{handles: make(map[string]*vf.VirtualMachine), fs: afero.NewOsFs()}
+}
+func NewWithFS(fs afero.Fs) *Provider {
+	return &Provider{handles: make(map[string]*vf.VirtualMachine), fs: fs}
+}
 
 func (p *Provider) StartVM(ctx context.Context, vm domain.VM) (int, error) {
 	// Build vfkit config
 	// Decide whether to create/initialize the EFI variable store
 	createVarStore := false
-	if st, err := os.Stat(vm.EFIVarsPath); err != nil || st.Size() == 0 {
+	if st, err := p.fs.Stat(vm.EFIVarsPath); err != nil || st.Size() == 0 {
 		createVarStore = true
 	}
 	boot := config.NewEFIBootloader(vm.EFIVarsPath, createVarStore)
@@ -60,7 +66,7 @@ func (p *Provider) StartVM(ctx context.Context, vm domain.VM) (int, error) {
 
 	// Attach cloud-init seed ISO only if the file exists
 	if vm.SeedISOPath != "" {
-		if st, err := os.Stat(vm.SeedISOPath); err == nil && !st.IsDir() {
+		if st, err := p.fs.Stat(vm.SeedISOPath); err == nil && !st.IsDir() {
 			if blk, err := config.VirtioBlkNew(vm.SeedISOPath); err == nil {
 				blk.ReadOnly = true
 				_ = vmc.AddDevice(blk)
