@@ -9,6 +9,7 @@ import (
 	"os"
 
 	artfs "github.com/alechenninger/orchard/internal/artifacts/fs"
+	hdi "github.com/alechenninger/orchard/internal/cloudinit/hdiutil"
 	seed "github.com/alechenninger/orchard/internal/cloudinit/seed"
 	"github.com/alechenninger/orchard/internal/domain"
 	runfs "github.com/alechenninger/orchard/internal/runstate/fs"
@@ -23,10 +24,17 @@ type App struct {
 	Artifacts domain.VMArtifacts
 	Clock     domain.Clock
 	FS        afero.Fs
+	SeedBuild seed.CIDATABuilder
 }
 
-func New(store domain.VMStore, shim domain.ShimProcessManager, art domain.VMArtifacts) *App {
-	return &App{Store: store, Shim: shim, Artifacts: art, Clock: domain.RealClock{}, FS: afero.NewOsFs()}
+func New(store domain.VMStore, shim domain.ShimProcessManager, art domain.VMArtifacts, fs afero.Fs, builder seed.CIDATABuilder) *App {
+	if fs == nil {
+		fs = afero.NewOsFs()
+	}
+	if builder == nil {
+		builder = hdi.Builder{}
+	}
+	return &App{Store: store, Shim: shim, Artifacts: art, Clock: domain.RealClock{}, FS: fs, SeedBuild: builder}
 }
 
 func NewDefault() *App {
@@ -34,7 +42,7 @@ func NewDefault() *App {
 	run := runfs.NewDefault()
 	shim := domain.ShimProcessManager(shimproc.New(store, run))
 	art := artfs.NewDefault()
-	return &App{Store: store, Shim: shim, Artifacts: art, Clock: domain.RealClock{}, FS: afero.NewOsFs()}
+	return New(store, shim, art, afero.NewOsFs(), hdi.Builder{})
 }
 
 type UpParams struct {
@@ -100,7 +108,7 @@ func (a *App) Up(ctx context.Context, p UpParams) (*domain.VM, error) {
 	if err != nil {
 		return nil, fmt.Errorf("reading ssh key: %w", err)
 	}
-	if err := seed.New().Generate(ctx, vm, string(kb), vm.SeedISOPath); err != nil {
+	if err := seed.NewWithFSAndBuilder(a.FS, a.SeedBuild).Generate(ctx, vm, string(kb), vm.SeedISOPath); err != nil {
 		return nil, err
 	}
 	if err := a.Store.Save(ctx, vm); err != nil { // persist updated paths

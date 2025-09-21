@@ -23,19 +23,6 @@ type VM struct {
 	Status      string `json:"status"`
 }
 
-type CreateParams struct {
-	Name        string
-	BaseImage   string // path to base image provided by user
-	CPUs        int
-	MemoryMiB   int
-	DiskSizeGiB int
-	SSHKeyPath  string
-}
-
-type StartOptions struct {
-	Detach bool
-}
-
 // VMStore persists VM metadata and provides name allocation.
 type VMStore interface {
 	NextName(ctx context.Context) (string, error)

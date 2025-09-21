@@ -2,28 +2,42 @@ package application
 
 import (
 	"context"
-	"runtime"
+	"path/filepath"
 	"testing"
 	"time"
 
-	artmem "github.com/alechenninger/orchard/internal/artifacts/mem"
+	artfs "github.com/alechenninger/orchard/internal/artifacts/fs"
 	"github.com/alechenninger/orchard/internal/domain"
-	"github.com/alechenninger/orchard/internal/vmstore/mem"
+	fsstore "github.com/alechenninger/orchard/internal/vmstore/fs"
+	"github.com/spf13/afero"
 )
+
+type noopBuilder struct{}
+
+func (noopBuilder) Build(ctx context.Context, fs afero.Fs, srcDir string, dstPath string) error {
+	a := &afero.Afero{Fs: fs}
+	_ = a.MkdirAll(filepath.Dir(dstPath), 0o755)
+	return a.WriteFile(dstPath, []byte("iso"), 0o644)
+}
 
 func TestUpCreatesVMAndLists(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
-	// Use a test image path that exists: use the current file as a stand-in
-	_, file, _, _ := runtime.Caller(0)
-	img := file
+	// Use in-memory FS-backed services
+	memfs := afero.NewMemMapFs()
+	store := fsstore.NewWithFS("/testroot", memfs)
+	art := artfs.NewWithFS("/testroot", memfs)
+	app := New(store, &fakeShim{}, art, memfs, noopBuilder{})
 
-	store := mem.New()
-	app := New(store, &fakeShim{}, artmem.New())
+	// Create fake base image and SSH key in memfs
+	img := "/testroot/image.img"
+	key := "/testroot/id_ed25519.pub"
+	_ = afero.WriteFile(memfs, img, []byte("base"), 0o644)
+	_ = afero.WriteFile(memfs, key, []byte("ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQ test"), 0o644)
 	app.Clock = fixedClock{t: time.Unix(0, 1)}
 
-	vm1, err := app.Up(ctx, UpParams{ImagePath: img, CPUs: 2, MemoryMiB: 1024, DiskSizeGiB: 10})
+	vm1, err := app.Up(ctx, UpParams{ImagePath: img, CPUs: 2, MemoryMiB: 1024, DiskSizeGiB: 10, SSHKeyPath: key})
 	if err != nil {
 		t.Fatalf("Up failed: %v", err)
 	}
@@ -44,7 +58,7 @@ func TestUpCreatesVMAndLists(t *testing.T) {
 
 	// Create a second VM and ensure ordering by CreatedAt
 	app.Clock = fixedClock{t: time.Unix(0, 2)}
-	vm2, err := app.Up(ctx, UpParams{ImagePath: img, CPUs: 2, MemoryMiB: 1024, DiskSizeGiB: 10})
+	vm2, err := app.Up(ctx, UpParams{ImagePath: img, CPUs: 2, MemoryMiB: 1024, DiskSizeGiB: 10, SSHKeyPath: key})
 	if err != nil {
 		t.Fatalf("Up 2 failed: %v", err)
 	}
@@ -79,12 +93,19 @@ func (f fixedClock) Now() time.Time { return f.t }
 func TestStartStopUpdatesStore(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	_, file, _, _ := runtime.Caller(0)
 
-	store := mem.New()
-	app := New(store, &fakeShim{}, artmem.New())
+	memfs := afero.NewMemMapFs()
+	store := fsstore.NewWithFS("/testroot", memfs)
+	art := artfs.NewWithFS("/testroot", memfs)
+	shim := &fakeShim{}
+	app := New(store, shim, art, memfs, noopBuilder{})
 
-	vm, err := app.Up(ctx, UpParams{ImagePath: file})
+	img := "/testroot/image.img"
+	key := "/testroot/id_ed25519.pub"
+	_ = afero.WriteFile(memfs, img, []byte("base"), 0o644)
+	_ = afero.WriteFile(memfs, key, []byte("ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQ test"), 0o644)
+
+	vm, err := app.Up(ctx, UpParams{ImagePath: img, SSHKeyPath: key})
 	if err != nil {
 		t.Fatalf("up failed: %v", err)
 	}
@@ -115,12 +136,18 @@ func TestStartStopUpdatesStore(t *testing.T) {
 func TestDeleteNonRunning(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	_, file, _, _ := runtime.Caller(0)
 
-	store := mem.New()
-	app := New(store, &fakeShim{}, artmem.New())
+	memfs := afero.NewMemMapFs()
+	store := fsstore.NewWithFS("/testroot", memfs)
+	art := artfs.NewWithFS("/testroot", memfs)
+	app := New(store, &fakeShim{}, art, memfs, noopBuilder{})
 
-	vm, err := app.Up(ctx, UpParams{ImagePath: file})
+	img := "/testroot/image.img"
+	key := "/testroot/id_ed25519.pub"
+	_ = afero.WriteFile(memfs, img, []byte("base"), 0o644)
+	_ = afero.WriteFile(memfs, key, []byte("ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQ test"), 0o644)
+
+	vm, err := app.Up(ctx, UpParams{ImagePath: img, SSHKeyPath: key})
 	if err != nil {
 		t.Fatalf("up failed: %v", err)
 	}
@@ -136,21 +163,24 @@ func TestDeleteNonRunning(t *testing.T) {
 func TestDeleteRunningRequiresForce(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	_, file, _, _ := runtime.Caller(0)
 
-	store := mem.New()
-	app := New(store, &fakeShim{}, artmem.New())
+	memfs := afero.NewMemMapFs()
+	store := fsstore.NewWithFS("/testroot", memfs)
+	art := artfs.NewWithFS("/testroot", memfs)
+	shim := &fakeShim{}
+	app := New(store, shim, art, memfs, noopBuilder{})
 
-	vm, err := app.Up(ctx, UpParams{ImagePath: file})
+	img := "/testroot/image.img"
+	key := "/testroot/id_ed25519.pub"
+	_ = afero.WriteFile(memfs, img, []byte("base"), 0o644)
+	_ = afero.WriteFile(memfs, key, []byte("ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQ test"), 0o644)
+
+	vm, err := app.Up(ctx, UpParams{ImagePath: img, SSHKeyPath: key})
 	if err != nil {
 		t.Fatalf("up failed: %v", err)
 	}
-	// Simulate running by setting PID in store
-	vm.PID = 1234
-	vm.Status = "running"
-	if err := store.Save(ctx, *vm); err != nil {
-		t.Fatalf("save failed: %v", err)
-	}
+	// Simulate running by making shim report a PID
+	shim.nextPID = 1234
 
 	if err := app.Delete(ctx, vm.Name, false); err == nil {
 		t.Fatalf("expected error when deleting running VM without force")
