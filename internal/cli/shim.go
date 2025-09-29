@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"time"
 
-	vfprov "github.com/alechenninger/orchard/internal/provider/vfkit"
+	vfprov "github.com/alechenninger/orchard/internal/provider/vz"
 	runfs "github.com/alechenninger/orchard/internal/runstate/fs"
 	"github.com/alechenninger/orchard/internal/shim/proc"
 	fsstore "github.com/alechenninger/orchard/internal/vmstore/fs"
