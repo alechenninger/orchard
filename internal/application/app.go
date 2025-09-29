@@ -10,7 +10,6 @@ import (
 
 	artfs "github.com/alechenninger/orchard/internal/artifacts/fs"
 	hdi "github.com/alechenninger/orchard/internal/cloudinit/hdiutil"
-	seed "github.com/alechenninger/orchard/internal/cloudinit/seed"
 	"github.com/alechenninger/orchard/internal/domain"
 	runfs "github.com/alechenninger/orchard/internal/runstate/fs"
 	shimproc "github.com/alechenninger/orchard/internal/shim/proc"
@@ -24,10 +23,10 @@ type App struct {
 	Artifacts domain.VMArtifacts
 	Clock     domain.Clock
 	FS        afero.Fs
-	SeedBuild seed.CIDATABuilder
+	SeedBuild domain.CIDATABuilder
 }
 
-func New(store domain.VMStore, shim domain.ShimProcessManager, art domain.VMArtifacts, fs afero.Fs, builder seed.CIDATABuilder) *App {
+func New(store domain.VMStore, shim domain.ShimProcessManager, art domain.VMArtifacts, fs afero.Fs, builder domain.CIDATABuilder) *App {
 	if fs == nil {
 		fs = afero.NewOsFs()
 	}
@@ -108,7 +107,7 @@ func (a *App) Up(ctx context.Context, p UpParams) (*domain.VM, error) {
 	if err != nil {
 		return nil, fmt.Errorf("reading ssh key: %w", err)
 	}
-	if err := seed.NewWithFSAndBuilder(a.FS, a.SeedBuild).Generate(ctx, vm, string(kb), vm.SeedISOPath); err != nil {
+	if err := domain.NewCloudInitWithFSAndBuilder(a.FS, a.SeedBuild).Generate(ctx, vm, string(kb), vm.SeedISOPath); err != nil {
 		return nil, err
 	}
 	if err := a.Store.Save(ctx, vm); err != nil { // persist updated paths

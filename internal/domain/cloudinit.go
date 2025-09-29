@@ -1,4 +1,4 @@
-package seed
+package domain
 
 import (
 	"context"
@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/alechenninger/orchard/internal/cloudinit/hdiutil"
-	"github.com/alechenninger/orchard/internal/domain"
 	"github.com/spf13/afero"
 )
 
@@ -16,21 +15,22 @@ type CIDATABuilder interface {
 	Build(ctx context.Context, fs afero.Fs, srcDir string, dstPath string) error
 }
 
-type Service struct {
+// CloudInit generates a NoCloud seed ISO for a VM using an injected builder.
+type CloudInit struct {
 	fs      afero.Fs
 	builder CIDATABuilder
 }
 
-func New() *Service { return &Service{fs: afero.NewOsFs(), builder: hdiutil.Builder{}} }
+func NewCloudInit() *CloudInit { return &CloudInit{fs: afero.NewOsFs(), builder: hdiutil.Builder{}} }
 
-func NewWithFSAndBuilder(fs afero.Fs, builder CIDATABuilder) *Service {
-	return &Service{fs: fs, builder: builder}
+func NewCloudInitWithFSAndBuilder(fs afero.Fs, builder CIDATABuilder) *CloudInit {
+	return &CloudInit{fs: fs, builder: builder}
 }
 
 // Generate creates a NoCloud seed ISO at dstPath with the provided ssh key and vm hostname.
 // It requires macOS hdiutil to be available.
-func (s *Service) Generate(ctx context.Context, vm domain.VM, sshAuthorizedKey string, dstPath string) error {
-	af := &afero.Afero{Fs: s.fs}
+func (c *CloudInit) Generate(ctx context.Context, vm VM, sshAuthorizedKey string, dstPath string) error {
+	af := &afero.Afero{Fs: c.fs}
 	workDir, err := af.TempDir("", "orchard-seed-")
 	if err != nil {
 		return err
@@ -51,7 +51,7 @@ func (s *Service) Generate(ctx context.Context, vm domain.VM, sshAuthorizedKey s
 		return err
 	}
 	// Build CIDATA ISO from workDir into dstPath
-	if err := s.builder.Build(ctx, s.fs, workDir, dstPath); err != nil {
+	if err := c.builder.Build(ctx, c.fs, workDir, dstPath); err != nil {
 		return fmt.Errorf("hdiutil makehybrid failed: %w", err)
 	}
 	return nil
