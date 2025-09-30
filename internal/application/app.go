@@ -45,11 +45,12 @@ func NewDefault() *App {
 }
 
 type UpParams struct {
-	ImagePath   string
-	CPUs        int
-	MemoryMiB   int
-	DiskSizeGiB int
-	SSHKeyPath  string
+	ImagePath     string
+	CPUs          int
+	MemoryMiB     int
+	DiskSizeGiB   int
+	SSHKeyPath    string
+	EnableRosetta bool
 }
 
 func (a *App) Up(ctx context.Context, p UpParams) (*domain.VM, error) {
@@ -82,13 +83,14 @@ func (a *App) Up(ctx context.Context, p UpParams) (*domain.VM, error) {
 	}
 
 	vm := domain.VM{
-		Name:         name,
-		CPUs:         p.CPUs,
-		MemoryMiB:    p.MemoryMiB,
-		DiskSizeGiB:  p.DiskSizeGiB,
-		BaseImageRef: absImage,
-		Hostname:     name,
-		Status:       "stopped",
+		Name:          name,
+		CPUs:          p.CPUs,
+		MemoryMiB:     p.MemoryMiB,
+		DiskSizeGiB:   p.DiskSizeGiB,
+		BaseImageRef:  absImage,
+		Hostname:      name,
+		Status:        "stopped",
+		EnableRosetta: p.EnableRosetta,
 	}
 	_ = sshKeyPath // reserved for cloud-init later
 

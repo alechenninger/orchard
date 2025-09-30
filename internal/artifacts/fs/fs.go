@@ -13,16 +13,16 @@ import (
 	"github.com/spf13/afero"
 )
 
-type Service struct {
+type FsVmArtifacts struct {
 	baseDir string
 	fs      afero.Fs
 }
 
-func NewWithBaseDir(baseDir string) *Service           { return &Service{baseDir: baseDir, fs: afero.NewOsFs()} }
-func NewDefault() *Service                             { return &Service{baseDir: fsstore.DefaultBaseDir(), fs: afero.NewOsFs()} }
-func NewWithFS(baseDir string, fsys afero.Fs) *Service { return &Service{baseDir: baseDir, fs: fsys} }
+func NewWithBaseDir(baseDir string) *FsVmArtifacts           { return &FsVmArtifacts{baseDir: baseDir, fs: afero.NewOsFs()} }
+func NewDefault() *FsVmArtifacts                             { return &FsVmArtifacts{baseDir: fsstore.DefaultBaseDir(), fs: afero.NewOsFs()} }
+func NewWithFS(baseDir string, fsys afero.Fs) *FsVmArtifacts { return &FsVmArtifacts{baseDir: baseDir, fs: fsys} }
 
-func (s *Service) Prepare(ctx context.Context, vm *domain.VM) error {
+func (s *FsVmArtifacts) Prepare(ctx context.Context, vm *domain.VM) error {
 	vmDir := filepath.Join(s.baseDir, "vms", vm.Name)
 	af := &afero.Afero{Fs: s.fs}
 	if err := af.MkdirAll(vmDir, 0o755); err != nil {
@@ -66,4 +66,4 @@ func copyFile(fsys afero.Fs, src, dst string) error {
 	return nil
 }
 
-var _ domain.VMArtifacts = (*Service)(nil)
+var _ domain.VMArtifacts = (*FsVmArtifacts)(nil)

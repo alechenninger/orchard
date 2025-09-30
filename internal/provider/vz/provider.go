@@ -67,6 +67,15 @@ func (p *Provider) StartVM(ctx context.Context, vm domain.VM) (int, error) {
 		slog.Info("nested virtualization not supported on this host; skipping")
 	}
 
+	// Configure Rosetta for x86 binary translation (requires macOS Ventura+)
+	if vm.EnableRosetta {
+		if err := p.configureRosetta(vmConfig); err != nil {
+			slog.Warn("failed to enable Rosetta", "error", err)
+		} else {
+			slog.Info("Rosetta enabled for x86 binary translation")
+		}
+	}
+
 	if err := p.configureDevices(vmConfig, vm); err != nil {
 		return 0, err
 	}
@@ -157,6 +166,37 @@ func (p *Provider) configureDevices(vmConfig *vz.VirtualMachineConfiguration, vm
 	} else {
 		slog.Warn("failed to configure entropy device", "error", err)
 	}
+
+	return nil
+}
+
+func (p *Provider) configureRosetta(vmConfig *vz.VirtualMachineConfiguration) error {
+	// Check if Rosetta is available on the host
+	availability := vz.LinuxRosettaDirectoryShareAvailability()
+	if availability != vz.LinuxRosettaAvailabilityInstalled {
+		if availability == vz.LinuxRosettaAvailabilityNotSupported {
+			return fmt.Errorf("rosetta directory sharing is not supported on this system (requires macOS Ventura or later)")
+		}
+		return fmt.Errorf("rosetta is not installed; run: softwareupdate --install-rosetta")
+	}
+
+	// Create the Rosetta directory share
+	rosettaShare, err := vz.NewLinuxRosettaDirectoryShare()
+	if err != nil {
+		return fmt.Errorf("creating Rosetta directory share: %w", err)
+	}
+
+	// Mount it at /mnt/rosetta in the guest (conventional path)
+	rosettaDirectoryShareConfiguration, err := vz.NewVirtioFileSystemDeviceConfiguration("rosetta")
+	if err != nil {
+		return fmt.Errorf("creating Rosetta virtio-fs config: %w", err)
+	}
+	rosettaDirectoryShareConfiguration.SetDirectoryShare(rosettaShare)
+
+	// Add to filesystem devices
+	vmConfig.SetDirectorySharingDevicesVirtualMachineConfiguration([]vz.DirectorySharingDeviceConfiguration{
+		rosettaDirectoryShareConfiguration,
+	})
 
 	return nil
 }

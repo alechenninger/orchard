@@ -4,18 +4,19 @@ import "context"
 
 // VM represents a virtual machine's desired and runtime state.
 type VM struct {
-	ID           string `json:"id"`
-	Name         string `json:"name"`
-	CreatedAt    int64  `json:"createdAt"`
-	CPUs         int    `json:"cpus"`
-	MemoryMiB    int    `json:"memoryMiB"`
-	DiskPath     string `json:"diskPath"`
-	DiskSizeGiB  int    `json:"diskSizeGiB"`
-	EFIVarsPath  string `json:"efiVarsPath"`
-	SeedISOPath  string `json:"seedIsoPath"`
-	MACAddress   string `json:"macAddress"`
-	Hostname     string `json:"hostname"`
-	BaseImageRef string `json:"baseImageRef"`
+	ID            string `json:"id"`
+	Name          string `json:"name"`
+	CreatedAt     int64  `json:"createdAt"`
+	CPUs          int    `json:"cpus"`
+	MemoryMiB     int    `json:"memoryMiB"`
+	DiskPath      string `json:"diskPath"`
+	DiskSizeGiB   int    `json:"diskSizeGiB"`
+	EFIVarsPath   string `json:"efiVarsPath"`
+	SeedISOPath   string `json:"seedIsoPath"`
+	MACAddress    string `json:"macAddress"`
+	Hostname      string `json:"hostname"`
+	BaseImageRef  string `json:"baseImageRef"`
+	EnableRosetta bool   `json:"enableRosetta"` // Enable Rosetta for x86 binary translation in ARM VM
 
 	// Runtime
 	PID         int    `json:"pid"`
